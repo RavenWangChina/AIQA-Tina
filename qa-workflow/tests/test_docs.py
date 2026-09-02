@@ -20,7 +20,7 @@ def test_html_selfcontained_and_has_content():
     ext = re.findall(r'(?:src|href)="http[^"]*"', text)
     assert not ext, f"发现外链，破坏自包含: {ext[:3]}"
     # 关键内容与水印
-    for kw in ["双环", "一主多从", "双通道", "Raven Wang", "实施路线"]:
+    for kw in ["双环", "一主多从", "双通道", "MiaoYu", "实施路线"]:
         assert kw in text, f"HTML 缺关键内容: {kw}"
 
 

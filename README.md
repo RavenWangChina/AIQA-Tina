@@ -1,6 +1,6 @@
-# AIQA-Tina
+# AIQA-MiaoYu
 
-> **© Raven Wang** · 2026年09月02日
+> **© MiaoYu** · 2026年09月02日
 > 个人测试方法论沉淀——基于 AI 智能体（Claude Code）的 QA 测试工作流体系与全栈开发流水线。
 
 ## 这是什么

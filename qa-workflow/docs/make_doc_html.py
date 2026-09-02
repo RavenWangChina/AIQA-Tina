@@ -46,7 +46,7 @@ def convert(src_md: Path, dst_html: Path) -> None:
 </head>
 <body><div class="page">
 {body}
-<div class="watermark">© Raven Wang · 生成自 {src_md.name}</div>
+<div class="watermark">© MiaoYu · 生成自 {src_md.name}</div>
 </div></body>
 </html>
 """

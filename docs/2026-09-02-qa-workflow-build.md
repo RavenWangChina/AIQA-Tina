@@ -140,7 +140,7 @@ Expected: FAIL（`test_all_expected_files_exist` 报缺少大量文件）
 
 见 `docs/部署手册.md`（搭好后生成）。
 
-© Raven Wang · 2026年09月02日
+© MiaoYu · 2026年09月02日
 ```
 
 创建空目录：`qa-knowledge/01-系统认知`、`qa-knowledge/02-用例库`、`qa-knowledge/03-BUG库`、`qa-knowledge/04-报告库`、`docs/`（空目录用占位方式：后续任务立即填文件，无需 .gitkeep）。
@@ -1064,7 +1064,7 @@ def test_html_selfcontained_and_has_content():
     ext = re.findall(r'(?:src|href)="http[^"]*"', text)
     assert not ext, f"发现外链，破坏自包含: {ext[:3]}"
     # 关键内容与水印
-    for kw in ["双环", "一主多从", "双通道", "Raven Wang", "实施路线"]:
+    for kw in ["双环", "一主多从", "双通道", "MiaoYu", "实施路线"]:
         assert kw in text, f"HTML 缺关键内容: {kw}"
 
 
@@ -1134,7 +1134,7 @@ def convert(src_md: Path, dst_html: Path) -> None:
 </head>
 <body><div class="page">
 {body}
-<div class="watermark">© Raven Wang · 生成自 {src_md.name}</div>
+<div class="watermark">© MiaoYu · 生成自 {src_md.name}</div>
 </div></body>
 </html>
 """
@@ -1159,7 +1159,7 @@ python qa-workflow/docs/make_doc_html.py "docs/superpowers/specs/2026-09-02-qa-t
 ```markdown
 # QA 工作流包 · 部署手册
 
-> © Raven Wang · 2026年09月02日
+> © MiaoYu · 2026年09月02日
 > 前提：目标机器 Windows 11、Claude Code 已装、Node 20+、Python 3.10+、JDK 17+（Maestro 用）
 
 ## 五步部署
