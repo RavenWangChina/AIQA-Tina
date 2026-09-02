@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2026-09-02-qa-test-workflow-design</title>
+<style>
+:root { --ink:#1f2933; --accent:#0b6e4f; --line:#e4e7eb; --bg:#f8f9fa; }
+* { box-sizing: border-box; }
+body { font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+  color:var(--ink); background:var(--bg); margin:0; line-height:1.75; }
+.page { max-width:880px; margin:0 auto; padding:48px 40px 96px;
+  background:#fff; min-height:100vh; box-shadow:0 0 24px rgba(31,41,51,.06); }
+h1 { font-size:1.9em; border-bottom:3px solid var(--accent); padding-bottom:.3em; }
+h2 { font-size:1.35em; margin-top:2em; border-left:5px solid var(--accent); padding-left:.5em; }
+h3 { font-size:1.1em; margin-top:1.6em; }
+table { border-collapse:collapse; width:100%; margin:1em 0; font-size:.92em; }
+th { background:var(--accent); color:#fff; }
+th,td { border:1px solid var(--line); padding:8px 10px; text-align:left; }
+tr:nth-child(even) td { background:var(--bg); }
+code { background:#eef2f3; padding:2px 5px; border-radius:4px; font-size:.9em; }
+pre { background:#1f2933; color:#e6edf3; padding:14px; border-radius:8px; overflow-x:auto; }
+pre code { background:none; color:inherit; }
+blockquote { border-left:4px solid var(--accent); background:var(--bg);
+  margin:1em 0; padding:.6em 1em; color:#52606d; }
+img { max-width:100%; }
+a { color:var(--accent); }
+.watermark { text-align:right; color:#9aa5b1; font-size:.85em; margin-top:64px;
+  border-top:1px solid var(--line); padding-top:12px; }
+@media print { body{background:#fff} .page{box-shadow:none; padding:0} }
+</style>
+</head>
+<body><div class="page">
+<h1 id="qa-spec">QA 测试工作流 · 设计文档（spec）</h1>
+<blockquote>
+<p><strong>© Raven Wang</strong> · 2026年09月02日
+状态：待用户审阅
+基础：以《全栈全自动开发工作流》（六环节开发流水线）为蓝本演化，纪律层（证据先于结论、双通道对抗、检查点式交互、知识写文档）原样继承
+下一步：本文档审定后进 writing-plans 出实施计划</p>
+</blockquote>
+<hr />
+<h2 id="1">1. 背景与目标</h2>
+<p><strong>被测系统</strong>：智能音箱类控制系统——服务端（HTTP API）+ 移动端（Android &amp; iOS App，App 控制音箱硬件）。</p>
+<p><strong>起点困境</strong>：历史遗留项目，无文档、无知识库、无用例积累，系统认知只能从源码逆向获得。</p>
+<p><strong>工作流目标</strong>：</p>
+<ol>
+<li>从零建立项目知识库（系统认知 → 用例 → BUG 模式 → 报告）</li>
+<li>支持禅道工单/人工指令双入口的功能模块测试</li>
+<li>每类测试都是双通道对抗（不是跑两遍，是两个立场/两种感知维度）</li>
+<li>BUG 报告含完整证据链（环境自动采集、方法、用例、截图/日志/录屏）</li>
+<li>产出面向领导的周期汇报（数据从知识库自动汇总，不手写）</li>
+<li>混合执行：智能体能做的全自动，真机人工环节由智能体编排（checklist + 记录模板）并归档证据</li>
+</ol>
+<p><strong>已确认的环境事实</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>工作机</td>
+<td>Windows 11</td>
+</tr>
+<tr>
+<td>Mac 资源</td>
+<td>有（用于 iOS WDA 一次性编译签名；此后 Windows 全程接管）</td>
+</tr>
+<tr>
+<td>禅道</td>
+<td>官方 zentao-cli MCP（要求禅道支持 RESTful API 2.0，建议 20+；若为老版本 API v1 则换第三方 hustbeta/zentao-v1-mcp——两版差异仅此选型一点，流程不变）</td>
+</tr>
+<tr>
+<td>源码访问</td>
+<td>Git 仓库已可连接获取</td>
+</tr>
+<tr>
+<td>现有资产</td>
+<td>pytest+httpx、adb、Maestro、go-ios+WDA、playwright MCP、semgrep MCP、Claude Code</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2">2. 总体架构：双环 × 一主多从</h2>
+<pre><code>                        ┌─────────────────────────────┐
+                        │      主对话（编排者+入口）    │
+                        │  接禅道MCP/指令 → 拆任务分发  │
+                        │  收结果 → 总结归纳 → 出报告   │
+                        └──────┬───────────┬──────────┘
+                    派发 ↓     ↓ 派发      ↓ 派发
+              ┌──────────┐ ┌──────────┐ ┌──────────┐
+              │ 考古从    │ │ 用例从×2  │ │ 执行从    │  ← 从对话（可多实例并行）
+              │ 源码逆向  │ │ 正向/逆向 │ │ 执行+编排  │
+              └────┬─────┘ └────┬─────┘ └────┬─────┘
+                   ↓ 写入       ↓ 写入       ↓ 读取+写入
+              ┌────────────────────────────────────┐
+              │        知识库（外环，文件体系）       │
+              │  系统认知/ 用例库/ BUG库/ 报告库      │
+              └────────────────────────────────────┘
+                   ↑ 反哺：用例复用、风险预警、模式匹配
+</code></pre>
+<p><strong>双环</strong>：
+- <strong>内环·测试环</strong>：接单 → 测试分析 → 用例选取/设计 → 执行 → 证据链采集 → BUG 报告 → 回归验证
+- <strong>外环·知识环</strong>：每轮产出持续写回知识库；知识库反哺下一轮。知识考古是外环的<strong>冷启动</strong>，不是独立阶段——边测边学，考古与测试交替推进</p>
+<p><strong>一主多从运行逻辑</strong>（所有从对话共用）：
+- 开工先读知识库 <code>00-索引.md</code>
+- 只干职能内的事
+- 产物写回知识库（完整产物落文件，只回传摘要+产物路径——规避摘要瓶颈）
+- 从对话之间不通信、不读彼此中间状态
+- 向主对话汇报</p>
+<p><strong>主对话的仲裁职责</strong>（检查点，平移自开发流水线）：BUG 定级争议、测试范围取舍（时间不够砍哪层）、不可逆动作（向禅道提单=对外可见）——三类停下来问用户，其余自主推进。</p>
+<h3 id="21">2.1 架构选型论证：为什么一主多从而非多角色对等</h3>
+<p>完整论证含反方论据，此处为结论摘要（调研一手来源：Anthropic 工程博客、MAST arXiv:2503.13657 1642 条 trace 实证、AutoGen 39 条 infinite-loop issue、MetaGPT/CrewAI/Magentic-One 实际架构）：</p>
+<ol>
+<li><strong>测试是扇出型任务</strong>（按模块/用例/环境并行）——主从架构的生产验证主场</li>
+<li><strong>QA 必须确定性终止</strong>——对等架构头部失败模式即"无终止与相互推诿"（SOTA 框架实测失败率 41%–86.7%）</li>
+<li><strong>测试产物高噪声</strong>（日志/堆栈/截图）——从对话上下文隔离是刚需，对等群聊互相污染</li>
+<li><strong>判定需唯一归属</strong>——MAST 实测对等架构约 23.5% 失败出在验证环节，而验证恰是 QA 核心</li>
+<li><strong>token 有账可查</strong>——主对话是天然 budget owner，可路由便宜模型给简单从任务</li>
+<li><strong>头部"多角色"框架生产形态都已收敛为编排</strong>：MetaGPT 自述 "Code = SOP"、CrewAI 层级模式强制 manager、Magentic-One 即 Orchestrator 主导</li>
+</ol>
+<p><strong>关键设计点——局部对等、全局主从</strong>：双对抗（正向从 × 逆向从）保留在从对话层产生张力（对等架构的真实优势），主对话握派发/合并/终止/汇报（主从架构的真实优势）。此形态与亚马逊生产级 QA 系统 Neo 一致。</p>
+<p><strong>诚实保留的反方论据</strong>：orchestrator 是单点且拆错任务则全体空转（对策：派发规则写进主对话 prompt + 知识库反哺降低拆错率）；固定流程部分未来若完全稳定，可降级为预定义 pipeline 更省成本（Anthropic 原则：找最简单的方案）。</p>
+<hr />
+<h2 id="3-qa-knowledge-git">3. 知识库体系（qa-knowledge/，纯文件 + git 版本化）</h2>
+<pre><code>qa-knowledge/
+├── 00-索引.md                    ← 主对话每次开工先读：各库状态、模块清单导航
+├── 01-系统认知/                  ← 考古从产出，持续修正
+│   ├── 架构总览.md               （服务端/移动端/音响链路、技术栈、部署形态）
+│   ├── 模块卡片/&lt;模块名&gt;.md       （入口、依赖、接口清单、数据流、已知坑）
+│   └── 接口清单.md               （服务端 API：路径/参数/鉴权/归属模块——契约基线）
+├── 02-用例库/                    ← 用例从产出，按模块+级别组织
+│   └── &lt;模块名&gt;/
+│       ├── L1冒烟.yaml|md        （可自动化用例直接用工具原生格式）
+│       ├── L2功能.md             （含手工用例：步骤/预期/前置）
+│       ├── L3场景.md             （端到端组合场景）
+│       └── L4探索.md             （探索性测试笔记）
+├── 03-BUG库/
+│   ├── 模式库.md                 ← 同类 bug 特征与高发模块（反哺用例设计）
+│   └── 归档/BUG-&lt;日期&gt;-&lt;编号&gt;/    （报告.md + 复现日志 + 截图/ + 录屏/）
+├── 04-报告库/
+│   ├── 轮次/&lt;日期&gt;-&lt;模块&gt;/        （每轮：范围/结果/证据链索引/Allure 产物）
+│   └── 汇总/&lt;周期&gt;汇报.md         （给领导，数据自动汇总）
+</code></pre>
+<p>设计决策：
+- <strong>测试级别固定四层 L1-L4</strong>（冒烟/功能/场景/探索），主对话派发必须声明本轮测到哪层
+- <strong>可自动化用例以工具原生格式存</strong>（Maestro YAML / pytest），用例即脚本，不做两套
+- <strong>BUG 目录化</strong>——证据链是 bug 的组成部分
+- 知识库不用数据库：智能体读写即文件读写，git 管版本，零基础设施</p>
+<hr />
+<h2 id="4">4. 测试类型 × 双通道对抗矩阵（工作流的心脏）</h2>
+<p><strong>原则：对抗 ≠ 跑两遍。对抗 = 两个立场，或两种感知维度。</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>测试类型</th>
+<th>通道 A</th>
+<th>通道 B（对抗方）</th>
+<th>不一致时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>功能·用例设计</td>
+<td>正向从：验证功能做了该做的</td>
+<td>逆向从：破坏者立场（边界值/非法输入/并发冲突/中途取消/断网重试）</td>
+<td>两从各出用例，主对话合并去重，覆盖缺口即分歧点报用户</td>
+</tr>
+<tr>
+<td>2</td>
+<td>功能·结果验证</td>
+<td>程序断言（maestro/pytest assert）</td>
+<td>视觉断言：Midscene VLM / 多模态模型审图</td>
+<td>断言过但画面错 → 仍算 BUG（断言盲区）</td>
+</tr>
+<tr>
+<td>3</td>
+<td>视觉回归（独立类型）</td>
+<td>像素 diff：Playwright toHaveScreenshot（Web/H5）+ pixelmatch/OpenCV（App 截图）</td>
+<td>语义审图：多模态模型看布局/遮挡/错位/乱码</td>
+<td>任一通道报警 → 人工裁决</td>
+</tr>
+<tr>
+<td>4</td>
+<td>性能</td>
+<td>服务端视角：k6 压测 + 阈值断言（grafana/mcp-k6 官方 MCP）</td>
+<td>客户端视角：go-ios/adb 采集 App 内存/CPU/FPS，统一时间戳对齐</td>
+<td>服务端扛住但 App 端崩 → 记 BUG</td>
+</tr>
+<tr>
+<td>5</td>
+<td>安全</td>
+<td>白盒：semgrep MCP 静态扫源码</td>
+<td>黑盒：OWASP ZAP daemon（REST API）+ nuclei（API 安全模板）</td>
+<td>双向发现都归档，合并去重</td>
+</tr>
+<tr>
+<td>6</td>
+<td>接口契约 + Fuzz</td>
+<td>契约基线：考古从的接口清单（OpenAPI/schema）</td>
+<td>Schemathesis：schema 校验 + 属性式模糊测试 + 负向用例（pytest 插件，一箭三雕）</td>
+<td>响应漂移 → 找开发确认是改了还是坏了</td>
+</tr>
+<tr>
+<td>7</td>
+<td>稳定性</td>
+<td>随机破坏：Fastbot_Android（字节，智能随机，优于 monkey）</td>
+<td>持续观察：自建 soak（pytest 长时循环 + logcat 看门狗捕获 FATAL/ANR/tombstone）</td>
+<td>crash/ANR 全部入 BUG 库</td>
+</tr>
+<tr>
+<td>8</td>
+<td>弱网/断连</td>
+<td>Toxiproxy（REST API 实时注入延迟/断连/限速，智能体 curl 直控）</td>
+<td>Clumsy（Windows 内核级整机弱网，硬件链路兜底）</td>
+<td>配网/重连失败场景重点采集</td>
+</tr>
+<tr>
+<td>9</td>
+<td>BUG 报告</td>
+<td>报告从生成</td>
+<td>主对话复核（步骤可复现？证据齐？定级准？）</td>
+<td>复核不过 → 打回，不入禅道</td>
+</tr>
+</tbody>
+</table>
+<p>对抗来源对照（与开发流水线的血统关系）：
+- 需求环节"工程×产品"（立场对抗）→ 测试域 = 正向×逆向用例从
+- 审查环节"pr-toolkit×coderabbit"（流水线对抗）→ 测试域 = 断言×视觉、白盒×黑盒、服务端×客户端指标</p>
+<hr />
+<h2 id="5">5. 从对话职能包</h2>
+<table>
+<thead>
+<tr>
+<th>从对话</th>
+<th>输入</th>
+<th>工具</th>
+<th>产出</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>考古从</td>
+<td>主对话指定模块范围</td>
+<td>Read/Grep/LSP/Explore、Git 访问源码仓</td>
+<td>模块卡片 + 接口清单 → <code>01-系统认知/</code></td>
+</tr>
+<tr>
+<td>正向用例从</td>
+<td>模块卡片 + 本轮级别</td>
+<td>知识库读写</td>
+<td>正向用例（L1-L4 按级）→ <code>02-用例库/</code></td>
+</tr>
+<tr>
+<td>逆向用例从</td>
+<td>模块卡片 + BUG 模式库 + 本轮级别</td>
+<td>知识库读写</td>
+<td>破坏性用例 → <code>02-用例库/</code>（与正向分文件，主对话合并）</td>
+</tr>
+<tr>
+<td>执行从</td>
+<td>用例清单 + 环境信息</td>
+<td>pytest+httpx / Maestro / adb / go-ios+WDA / k6 / ZAP / nuclei / Schemathesis / Fastbot / Toxiproxy；人工环节生成 checklist+记录模板</td>
+<td>执行记录 + 证据文件 + Allure 产物 → <code>04-报告库/轮次/</code></td>
+</tr>
+<tr>
+<td>报告从（可并入主对话）</td>
+<td>轮次产物 + 证据</td>
+<td>模板生成</td>
+<td>BUG 报告（复核后经禅道 MCP 提单）→ <code>03-BUG库/</code>；周期汇报 → <code>04-报告库/汇总/</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6-bug">6. BUG 报告与证据链</h2>
+<p><strong>单 BUG 报告模板</strong>（<code>03-BUG库/归档/BUG-&lt;日期&gt;-&lt;编号&gt;/报告.md</code>）：</p>
+<pre><code class="language-markdown"># BUG-2026-09-02-001 【模块名】一句话标题
+
+## 定级
+严重级：L1致命/L2主要/L3次要/L4轻微 | 优先级：高/中/低 | 复现概率：N/M（真实计数，禁写&quot;偶现&quot;）
+## 环境（自动采集，禁手填）
+服务端版本/commit、测试环境、Android 机型+系统+App版本、iOS 同、音箱固件、网络环境
+## 使用的测试方法
+测试类型 + 用例引用（02-用例库/...#TC-xx）
+## 复现步骤
+可执行、无歧义
+## 预期 vs 实际
+## 证据链（同目录归档）
+截图/录屏.mp4（adb screenrecord / iOS 录屏）、logcat 片段（时间戳+标红）、.har 抓包
+## 归因初判（非定论）
+考古从/执行从给出，指向疑似模块
+## 禅道
+bug 单号（提交后回填）
+</code></pre>
+<p><strong>证据链硬规则</strong>（继承"没有证据=没完成"）：
+1. 环境自动采集（adb/服务端 API 取版本），杜绝手抄失真
+2. 复现概率真实计数
+3. 双通道复核（报告从生成 × 主对话 checklist 复核）后才经禅道 MCP 提单——防智能体幻觉 bug
+4. BUG 归档同步更新模式库；同特征 bug 第二次出现时，逆向用例从必须加针对性用例</p>
+<hr />
+<h2 id="7">7. 汇报体系（双轨）</h2>
+<p><strong>轮次报告</strong>（执行层，每轮测试）：范围、用例执行结果、BUG 清单、证据链索引、Allure HTML 报告（附件机制把截图 diff/k6 summary/logcat/nuclei JSON 粘进同一份报告）。</p>
+<p><strong>周期汇报</strong>（管理层，给领导）：</p>
+<pre><code>一、本周范围（禅道单 + 指令）
+二、进度：知识库覆盖 X/Y 模块；用例 L1-L4 各 N 条；自动化率
+三、质量态势：新增 bug（按严重级分布）、修复回归、遗留风险 TOP3
+四、趋势：覆盖率/bug 收敛（周环比，数据来自报告库）
+五、风险与求助（如 iOS 自动化的 WDA 维护成本）
+</code></pre>
+<hr />
+<h2 id="8">8. 工具链整合批次</h2>
+<p><strong>第一批（立即，零/低成本）</strong>：
+1. zentao-cli MCP（官方，<code>npx -y zentao-cli mcp</code> + ZENTAO_URL/ZENTAO_TOKEN）
+2. k6.exe + grafana/mcp-k6 官方 MCP
+3. Schemathesis（pytest 插件）
+4. Allure 2 + allure-pytest（统一报告出口）
+5. Playwright 截图对比（已在栈内，写配置即可）</p>
+<p><strong>第二批（一周内）</strong>：
+6. Maestro CLI（Windows，Java 17+）+ <code>maestro mcp</code>；mobile-mcp（<code>npx -y @mobilenext/mobile-mcp</code>，Android 走 adb / iOS 真机走 go-ios+WDA）
+7. Fastbot_Android 替换 monkey + logcat 看门狗 soak 脚本
+8. Toxiproxy（弱网矩阵）
+9. OWASP ZAP daemon 模式 + nuclei</p>
+<p><strong>第三批（探索）</strong>：
+10. Midscene（Android VLM 视觉断言）
+11. Agentic 探索性测试（参考同构项目 MaestroTestAIAgent：Claude Code + Maestro MCP）
+12. 自愈策略：失败用例 → 智能体读日志/视图树 → 修选择器 → 重跑（不引 Healenium）</p>
+<p><strong>明确不做</strong>（防过度工程）：JMeter、Fastbot_iOS（已归档）、Charles 进自动化、Pact Broker（单团队无组织成本）、Applitools 1:1 替代物（不存在，像素 diff + VLM 两层即事实替代）。</p>
+<p><strong>iOS 特别路径</strong>：Mac 一次性编译签名 WDA 装入真机 → Windows 用 go-ios（<code>runwda</code> + 端口转发）+ Appium <code>usePreinstalledWDA</code>/<code>webDriverAgentUrl</code>（iOS 18+ 走 RemoteXPC）或 mobile-mcp 内置路径。Maestro 在 Windows 上对 iOS 零能力，不浪费时间。</p>
+<hr />
+<h2 id="9">9. 实施路线（冷启动）</h2>
+<ol>
+<li><strong>第 1 步</strong>：建 qa-knowledge/ 骨架 + 00-索引.md；装第一批工具（zentao MCP 连通禅道、k6、Allure）</li>
+<li><strong>第 2 步</strong>：选第一个模块（建议：登录或配网这类主路径）——考古从出模块卡片 + 接口清单</li>
+<li><strong>第 3 步</strong>：正向/逆向用例从对该模块出 L1+L2 用例；执行从在 Android 真机 + API 层跑通第一轮（含 Allure 报告）</li>
+<li><strong>第 4 步</strong>：第一个 BUG 报告全流程演练（证据链 → 双通道复核 → 禅道提单 → 模式库回写）</li>
+<li><strong>第 5 步</strong>：iOS 链路（Mac 出 WDA → go-ios 接管）+ 第二批工具接入</li>
+<li><strong>第 6 步</strong>：首轮周期汇报生成，验证"数据自动汇总"闭环</li>
+<li>此后按禅道工单/指令进入常态运转，考古与测试交替扩模块</li>
+</ol>
+<hr />
+<h2 id="10">10. 已接受的风险与限制</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+<th>对策</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>orchestrator 单点</td>
+<td>主对话挂则本轮挂</td>
+<td>从对话产物已落盘，可重开主对话续跑（知识库即断点）</td>
+</tr>
+<tr>
+<td>摘要瓶颈</td>
+<td>从对话回传摘要丢失细节</td>
+<td>完整产物写文件、只回传指针（已写入运行逻辑）</td>
+</tr>
+<tr>
+<td>iOS WDA 维护</td>
+<td>免费证书 7 天过期</td>
+<td>go-ios <code>sign</code>（P12+描述文件）自签；企业证书则无此问题</td>
+</tr>
+<tr>
+<td>禅道老版本</td>
+<td>API v1 无官方 MCP</td>
+<td>换 hustbeta/zentao-v1-mcp，流程不变</td>
+</tr>
+<tr>
+<td>token 成本</td>
+<td>多 agent ≈15 倍消耗</td>
+<td>主对话路由：简单从任务用便宜模型；执行类工具调用本身不耗大 token</td>
+</tr>
+</tbody>
+</table>
+<div class="watermark">© Raven Wang · 生成自 2026-09-02-qa-test-workflow-design.md</div>
+</div></body>
+</html>

@@ -1,0 +1,33 @@
+# AIQA-Tina
+
+> **© Raven Wang** · 2026年09月02日
+> 个人测试方法论沉淀——基于 AI 智能体（Claude Code）的 QA 测试工作流体系与全栈开发流水线。
+
+## 这是什么
+
+一套「双环（测试环+知识环）× 一主多从」的 AI 测试工作流，针对智能音箱类控制系统（服务端 + Android/iOS 双端）从零建立知识库与测试体系；以及它所基于的全栈全自动开发流水线（六环节双视角对抗）。
+
+## 目录
+
+| 路径 | 内容 |
+|------|------|
+| [qa-workflow/](qa-workflow/) | 测试工作流包：知识库模板×12、五个从对话定义、主对话编排宪法、selfcheck 自检、工具安装脚本、契约测试×10 |
+| [qa-workflow/docs/2026-09-02-qa-test-workflow-design.html](qa-workflow/docs/2026-09-02-qa-test-workflow-design.html) | 设计文档·静态网页版（自包含单文件，可直接部署到任意静态服务器） |
+| [qa-workflow/docs/部署手册.md](qa-workflow/docs/部署手册.md) | 五步部署到新机器 |
+| [docs/2026-09-02-qa-test-workflow-design.md](docs/2026-09-02-qa-test-workflow-design.md) | 设计文档（spec 原文） |
+| [docs/2026-09-02-qa-workflow-build.md](docs/2026-09-02-qa-workflow-build.md) | 实施计划（6 任务，TDD） |
+| [全栈全自动开发工作流.md](全栈全自动开发工作流.md) | 六环节开发流水线完整文档 |
+| [工作流复刻手册-给智能体.md](工作流复刻手册-给智能体.md) | 给任意智能体的环境复刻操作手册（已脱敏） |
+
+## 快速开始
+
+1. 拷 `qa-workflow/` 到目标机器 → `python scripts/selfcheck.py` 自检
+2. 跑 `tools/install-batch1.ps1` 装第一批工具（k6/Allure/Schemathesis/zentao-cli）
+3. 在包根开 Claude Code，按 CLAUDE.md 宪法走「考古 → 双用例 → 执行 → 报告」闭环
+
+## 核心设计
+
+- **一主多从**：主对话编排，五个从对话（考古/正向用例/逆向用例/执行/报告）对抗协作
+- **双通道对抗**：每类测试都是两个立场或两种感知维度（正向×逆向、断言×视觉、白盒×黑盒、服务端×客户端指标）
+- **证据链纪律**：没有证据=没完成；BUG 报告双通道复核后入禅道
+- 架构选型论证（含反方论据）见设计文档第 2.1 节

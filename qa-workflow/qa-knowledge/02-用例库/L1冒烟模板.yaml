@@ -1,0 +1,10 @@
+# L1 冒烟用例（可自动化，Maestro YAML 原生格式）
+# 主路径可用性验证：跑不过=版本不可测，立即阻塞
+appId: com.example.app            # 部署时替换为实际包名
+name: 冒烟-<模块名>-主路径
+tags:
+  - L1
+  - <模块名>
+---
+- launchApp
+- assertVisible: ".*<主页面关键元素>.*"
